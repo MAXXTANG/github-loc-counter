@@ -1,0 +1,20 @@
+name = "github-loc-counter"
+compatibility_date = "2025-05-01"
+pages_build_output_dir = "public"
+
+# ─────────────────────────────────────────────────────────────
+# KV namespace for caching
+# 建立：wrangler kv:namespace create LOC_CACHE
+# 把回傳的 id 貼到下面
+# ─────────────────────────────────────────────────────────────
+[[kv_namespaces]]
+binding = "LOC_CACHE"
+id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+
+# ─────────────────────────────────────────────────────────────
+# Secrets（不要寫進 toml，用 wrangler secret 設）
+# wrangler pages secret put GITHUB_TOKEN
+# ─────────────────────────────────────────────────────────────
+
+[vars]
+CACHE_TTL_SECONDS = "86400"   # 24 小時
