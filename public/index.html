@@ -160,8 +160,16 @@
   });
 
   // 從 URL hash 直接查詢：#user=torvalds
+  // 等 Turnstile token ready 才 submit，避免 1.5s timeout race
   const hashUser = new URLSearchParams(location.hash.slice(1)).get('user');
-  if (hashUser) { input.value = hashUser; setTimeout(() => form.requestSubmit(), 1500); }
+  if (hashUser) {
+    input.value = hashUser;
+    const waitToken = setInterval(() => {
+      if (turnstileToken) { clearInterval(waitToken); form.requestSubmit(); }
+    }, 200);
+    // 安全上限 20 秒
+    setTimeout(() => clearInterval(waitToken), 20000);
+  }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();

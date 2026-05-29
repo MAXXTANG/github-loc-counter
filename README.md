@@ -120,6 +120,34 @@ Dashboard → 你的 zone → Security → WAF → Rate limiting rules → Creat
 - Counting characteristic：IP
 - Threshold：30 req in 60s → action：Block 10 min
 
+## 部署後檢查清單
+
+### 1. Rotate Cloudflare Turnstile Secret key
+> 為什麼：首次部署若用一次性指令把 secret 經剪貼簿/shell history 帶過，留有殘影。
+1. https://dash.cloudflare.com → Turnstile → 你的 site → **Settings** → **Rotate secret key**
+2. 複製新的 Secret key
+3. ```bash
+   wrangler pages secret put TURNSTILE_SECRET --project-name=github-loc-counter
+   ```
+4. 等 CF Pages 自動重啟 Workers（約 30 秒），重新試 https://github-loc-counter.pages.dev/
+
+### 2. Rotate GitHub PAT
+> 為什麼：首次部署若 token 曾出現在 Terminal scrollback 或 zsh history，視同已外洩。
+1. https://github.com/settings/tokens → 找到 `github-loc-counter` → **Delete**
+2. **Generate new token** (Classic or Fine-grained 都行)，scope 只勾 `public_repo`
+3. ```bash
+   wrangler pages secret put GITHUB_TOKEN --project-name=github-loc-counter
+   ```
+4. 清 zsh history（可選）：
+   ```bash
+   history -d $(history | grep ghp_ | awk '{print $1}' | head -1)
+   # 或直接 ~/.zsh_history 編輯刪除那行
+   ```
+
+### 3. 監控 GitHub API 用量
+- 每日定期看 https://api.github.com/rate_limit（用同顆 PAT 帶 Bearer header）
+- 到 80%（4000/hr）就警示，可能正被掃
+
 ## 開發
 
 ```bash
