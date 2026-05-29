@@ -9,7 +9,7 @@ pages_build_output_dir = "public"
 # ─────────────────────────────────────────────────────────────
 [[kv_namespaces]]
 binding = "LOC_CACHE"
-id = "PASTE_YOUR_KV_NAMESPACE_ID_HERE"
+id = "2d64fe1191c34c8a8df3fa004a6eb5fb"
 
 # ─────────────────────────────────────────────────────────────
 # Secrets（不要寫進 toml，用 wrangler secret 設）
