@@ -89,14 +89,36 @@ wrangler pages deploy public --project-name=github-loc-counter
 
 | 機制 | 實作 | 防什麼 |
 |---|---|---|
-| Per-IP rate limit | `_middleware.js`，5 req/min/IP，用 KV 計數 | 噴假 username 耗 GitHub PAT 額度 |
-| CORS 白名單 | `_middleware.js`，只允許 pages.dev 主站 + 預覽部署 + localhost | 別人架站借你的 GitHub 額度 |
+| **Cloudflare Turnstile** | 前端 widget + 後端 siteverify | IP 輪替攻擊：每次查詢都要過 challenge，VPN 池也擋 |
+| **CF Rate Limiting Rules** | Dashboard → Security → WAF → Rate limiting rules（30 req/min/IP） | 第二層保險，不吃 KV 額度 |
+| CORS 白名單 | `_middleware.js`，只允許 pages.dev 主站 + 預覽部署 + localhost | 瀏覽器跨域濫用 |
 | 輸入驗證 | username 走 GitHub 官方 regex | 路徑注入、KV key 注入 |
 | SSRF | fetch URL 寫死 `api.github.com` | 透過 user input 跳轉 |
 | 無 cache 後門 | 移除 `?force=1` 參數 | 繞 cache 重複打 GitHub |
 | PAT scope | 只給 `public_repo`（fine-grained PAT 推薦） | 即使 token 外洩傷害有限 |
+| 輪替提醒 | PAT 90 天到期 + 行事曆 | 減少 token 長期外洩風險 |
 
-調整限流參數（可選）：在 wrangler.toml `[vars]` 加 `RATE_LIMIT_MAX="5"`、`RATE_LIMIT_WINDOW="60"`、`ALLOWED_ORIGINS="https://yourdomain.com,..."`。
+### 已知設計取捨
+
+| 不做 | 理由 |
+|---|---|
+| ~~Per-IP KV rate limit~~ | 每個請求都寫 KV、免費額度 1000 writes/day，被洗 1001 個不同 IP 就壞，反成攻擊破口。改用 Turnstile + CF 內建 rate limiting |
+| ~~封鎖無 Origin 請求~~ | Turnstile token 是必填 header，server-to-server 沒過 challenge 自然擋掉，不用再判 Origin |
+
+### Turnstile 設定（部署必做）
+
+1. https://dash.cloudflare.com → Turnstile → Add site
+2. Domain：你的 pages.dev 網域（含預覽 wildcard 可選）
+3. Widget mode：**Managed**（自動切換難度）
+4. 拿到 **Site key**（公開，貼進 `public/index.html` 的 `data-sitekey`）
+5. 拿到 **Secret key**（不公開，跑 `wrangler pages secret put TURNSTILE_SECRET`）
+
+### CF Rate Limiting Rules（部署後加）
+
+Dashboard → 你的 zone → Security → WAF → Rate limiting rules → Create
+- Field：URI path → contains → `/api/loc/`
+- Counting characteristic：IP
+- Threshold：30 req in 60s → action：Block 10 min
 
 ## 開發
 

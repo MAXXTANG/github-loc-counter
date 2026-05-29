@@ -7,6 +7,7 @@
   <meta name="description" content="輸入任意 GitHub username，近似計算累積寫了多少行程式碼。">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🧮%3C/text%3E%3C/svg%3E">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <style>
     :root {
       --bg: #0d1117; --panel: #161b22; --border: #30363d;
@@ -114,11 +115,25 @@
       <a data-user="sindresorhus">sindresorhus</a>
     </div>
 
+    <!-- Cloudflare Turnstile：防止濫用 GitHub API 額度 -->
+    <div id="turnstile-container" style="margin-bottom:20px;">
+      <div class="cf-turnstile"
+           data-sitekey="0x4AAAAAADYkroWvRgoEnE_o"
+           data-callback="onTurnstileSuccess"
+           data-error-callback="onTurnstileError"
+           data-theme="auto"></div>
+    </div>
+
     <div id="result"></div>
 
     <footer>
       Powered by GitHub <code>/languages</code> API + Cloudflare Pages · 想要精確值？看
       <a href="https://github.com/MAXXTANG/maxxtang-loc">maxxtang-loc</a>（每月 tokei 快照）
+      <br><br>
+      <small style="color:var(--muted);line-height:1.6">
+        ⚠️ 本工具僅讀取 GitHub 公開資料、近似誤差 ±15%，<strong>不代表程式能力評估</strong>。
+        若不想被列入查詢結果，請寄信至 hanjourney@gmail.com 加入 blocklist。
+      </small>
     </footer>
   </main>
 
@@ -129,6 +144,16 @@
   const result = document.getElementById('result');
 
   let activeChart1, activeChart2;
+  let turnstileToken = null;
+
+  // Turnstile callbacks（widget 用 data-callback 呼叫）
+  window.onTurnstileSuccess = (token) => {
+    turnstileToken = token;
+  };
+  window.onTurnstileError = () => {
+    turnstileToken = null;
+    result.innerHTML = `<div class="error">⚠️ Turnstile 驗證失敗，重新整理頁面再試</div>`;
+  };
 
   document.querySelectorAll('.examples a').forEach(a => {
     a.addEventListener('click', () => { input.value = a.dataset.user; form.requestSubmit(); });
@@ -136,7 +161,7 @@
 
   // 從 URL hash 直接查詢：#user=torvalds
   const hashUser = new URLSearchParams(location.hash.slice(1)).get('user');
-  if (hashUser) { input.value = hashUser; form.requestSubmit(); }
+  if (hashUser) { input.value = hashUser; setTimeout(() => form.requestSubmit(), 1500); }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -147,6 +172,18 @@
   });
 
   async function query(user) {
+    // 等 Turnstile token（首次載入時 widget 可能還沒回呼）
+    if (!turnstileToken) {
+      result.innerHTML = `<div class="loading">等待 Turnstile 驗證完成…</div>`;
+      for (let i = 0; i < 30 && !turnstileToken; i++) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+      if (!turnstileToken) {
+        result.innerHTML = `<div class="error">Turnstile 沒回應，請重新整理頁面</div>`;
+        return;
+      }
+    }
+
     btn.disabled = true;
     btn.textContent = '查詢中…';
     result.innerHTML = `<div class="loading">正在掃描 ${user} 的所有 repo</div>`;
@@ -154,7 +191,9 @@
     if (activeChart2) { activeChart2.destroy(); activeChart2 = null; }
 
     try {
-      const r = await fetch(`/api/loc/${encodeURIComponent(user)}`);
+      const r = await fetch(`/api/loc/${encodeURIComponent(user)}`, {
+        headers: { 'X-Turnstile-Token': turnstileToken },
+      });
       const data = await r.json();
       if (!r.ok) {
         result.innerHTML = `<div class="error">❌ ${data.error || 'unknown error'}</div>`;
@@ -166,6 +205,9 @@
     } finally {
       btn.disabled = false;
       btn.textContent = '查詢';
+      // Turnstile token 是 one-shot，用過要重置 widget 拿下一張
+      turnstileToken = null;
+      if (window.turnstile) window.turnstile.reset();
     }
   }
 

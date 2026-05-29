@@ -1,22 +1,31 @@
 // GET /api/loc/:username
 //
 // 回傳該 username 在 GitHub 上所有非 fork、非 archived 公開 repo 的近似行數。
-// 流程：KV cache → GitHub repos → GitHub /languages → bytes→lines → 寫 KV → JSON
+// 流程：Turnstile → KV cache → GitHub repos → GitHub /languages → bytes→lines → 寫 KV → JSON
 //
 // Env bindings:
-//   LOC_CACHE       KV namespace
-//   GITHUB_TOKEN    secret（fine-grained PAT, public_repo 即可）
-//   CACHE_TTL_SECONDS  var，預設 86400 (24h)
+//   LOC_CACHE         KV namespace
+//   GITHUB_TOKEN      secret（PAT, public_repo 即可）
+//   TURNSTILE_SECRET  secret（Turnstile site secret key）
+//   CACHE_TTL_SECONDS var，預設 86400 (24h)
 
 import { bytesToLines, DATA_LANGS } from "../../_bytes_per_line.js";
+import { verifyTurnstile } from "../../_turnstile.js";
 
 const UA = "github-loc-counter (https://github.com/MAXXTANG/github-loc-counter)";
 
 export async function onRequestGet(ctx) {
   const { username } = ctx.params;
-  const { env } = ctx;
+  const { env, request } = ctx;
 
-  // ── 0. 輸入驗證 ──────────────────────────────────────────
+  // ── 0a. Turnstile 驗證 ──────────────────────────────────
+  // 沒過 challenge 直接擋（無論 Origin 是什麼），這是防 PAT 被洗的主防線。
+  const ts = await verifyTurnstile(env, request);
+  if (!ts.ok) {
+    return json({ error: ts.error, codes: ts.codes }, ts.status);
+  }
+
+  // ── 0b. 輸入驗證 ──────────────────────────────────────────
   if (!/^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/.test(username)) {
     return json({ error: "invalid username" }, 400);
   }
@@ -143,12 +152,12 @@ function ghHeaders(env) {
 }
 
 function json(body, status = 200) {
+  // CORS header 由 _middleware.js 統一注入，不在這裡重複設定
   return new Response(JSON.stringify(body, null, 2), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": status === 200 ? "public, max-age=600" : "no-store",
-      "access-control-allow-origin": "*",
     },
   });
 }
